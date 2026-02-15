@@ -1,10 +1,7 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import "../styles/auth.css";
 
 function Login() {
-  const navigate = useNavigate();
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -16,78 +13,54 @@ function Login() {
     try {
       const res = await fetch("http://localhost:5000/login", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
       });
 
       const data = await res.json();
 
-      if (!res.ok) {
-        setMessage(data.message || "Invalid email or password");
-        return;
+      if (res.ok) {
+        // ✅ Sync state before redirecting
+        localStorage.setItem("isLoggedIn", "true");
+        localStorage.setItem("userEmail", email);
+        localStorage.setItem("userBalance", data.paperBalance);
+        
+        console.log("✅ Login success, forcing redirect...");
+        // Use hard redirect to ensure Selenium catches the URL change immediately
+        window.location.href = "/home"; 
+      } else {
+        setMessage(data.message || "Invalid credentials");
       }
-
-      // ✅ LOGIN SUCCESS
-      localStorage.setItem("isLoggedIn", "true");
-      navigate("/home");
     } catch (error) {
-      setMessage("Backend not reachable. Is server running?");
+      setMessage("Backend error. Check terminal.");
     }
   };
 
   return (
     <div className="auth-page">
-      <h1 className="app-title">GreenScan</h1>
-      <p className="app-subtitle">
-        Smart Office Print & Resource Tracker
-      </p>
-
       <div className="auth-card">
-        <h2>Welcome Back</h2>
-        <p className="card-subtitle">Please login to your account</p>
-
+        <h2>Login to GreenScan</h2>
         <form onSubmit={handleLogin}>
-          <label>Email Address</label>
+          <label>Email</label>
           <input
             id="loginEmail"
             type="email"
-            placeholder="Enter your email address"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
           />
-
           <label>Password</label>
           <input
             id="loginPassword"
             type="password"
-            placeholder="Enter your password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
           />
-
-          {message && <p className="error-text">{message}</p>}
-
-          <button id="loginBtn" type="submit">
-            Login
-          </button>
+          {message && <p id="errorMessage" style={{color: 'red'}}>{message}</p>}
+          <button id="loginBtn" type="submit">Login</button>
         </form>
-
-        <p className="switch-text">
-          Don&apos;t have an account?{" "}
-          <span onClick={() => navigate("/register")}>
-            Register
-          </span>
-        </p>
       </div>
-
-      <footer>Academic Lab Project © 2026</footer>
     </div>
   );
 }
