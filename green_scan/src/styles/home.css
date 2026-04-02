@@ -328,19 +328,20 @@
   font-size: 14px;
   font-weight: 600;
   color: var(--text-muted);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 2px solid var(--border-color);
 }
 .activity-table td {
   padding: 16px;
   font-size: 14px;
   color: var(--text-main);
-  border-bottom: 1px solid var(--border-color);
   vertical-align: middle;
+  border: none;
+}
+.activity-table tr {
+  border-bottom: 1px solid var(--border-color);
 }
 .table-row { transition: background-color 0.2s; }
 .table-row:hover { background-color: var(--hover-bg); }
-.table-row:first-child { box-shadow: inset 0 0 0 1px #818cf8; border-radius: 8px; }
-.table-row:first-child td { border-bottom: none; }
 .doc-name-cell { display: flex; align-items: center; gap: 12px; font-weight: 500; }
 .file-icon { color: var(--text-muted); }
 .user-cell, .time-cell { color: var(--text-muted); }
@@ -568,4 +569,4 @@
 /* ── Responsive ──────────────────────────────────── */
 @media (max-width: 1024px) {
   .cards-grid, .middle-grid { grid-template-columns: 1fr; }
-} 
+}
