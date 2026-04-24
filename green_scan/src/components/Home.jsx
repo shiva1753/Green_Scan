@@ -28,11 +28,40 @@ const tonerConfig = [
   { label: 'BLACK',   key: 'black',   color: '#4b5563', alert: '#ef4444' }
 ];
 
+// ── Linear Regression: predicts next day's page volume from trend ──
+const linearRegression = (data) => {
+  const n = data.length;
+  if (n === 0) return 0;
+  const xMean = (n - 1) / 2;
+  const yMean = data.reduce((sum, v) => sum + v, 0) / n;
+  let numerator = 0, denominator = 0;
+  data.forEach((y, x) => {
+    numerator   += (x - xMean) * (y - yMean);
+    denominator += (x - xMean) ** 2;
+  });
+  const slope     = denominator !== 0 ? numerator / denominator : 0;
+  const intercept = yMean - slope * xMean;
+  return Math.max(1, intercept + slope * n);
+};
+
+// ── Weighted Burn Rate: recent days are weighted more heavily ──
+const weightedBurnRate = (data) => {
+  const n = data.length;
+  if (n === 0) return 0;
+  let totalWeight = 0, weightedSum = 0;
+  data.forEach((v, i) => {
+    const weight  = i + 1;
+    weightedSum  += v * weight;
+    totalWeight  += weight;
+  });
+  return weightedSum / totalWeight;
+};
+
 const Dashboard = () => {
-  const [isModalOpen,       setIsModalOpen]       = useState(false);
-  const [isAllJobsModalOpen,setIsAllJobsModalOpen] = useState(false);
-  const [isRefillModalOpen, setIsRefillModalOpen]  = useState(false);
-  const [isDarkMode,        setIsDarkMode]         = useState(false);
+  const [isModalOpen,        setIsModalOpen]        = useState(false);
+  const [isAllJobsModalOpen, setIsAllJobsModalOpen]  = useState(false);
+  const [isRefillModalOpen,  setIsRefillModalOpen]   = useState(false);
+  const [isDarkMode,         setIsDarkMode]          = useState(false);
 
   const [jobData,    setJobData]    = useState({ name: '', pages: '', type: 'Black & White' });
   const [searchTerm, setSearchTerm] = useState('');
@@ -127,29 +156,72 @@ const Dashboard = () => {
       })
     : recentJobs;
 
+  // ── Main Prediction Engine ──
   const calculateAI = () => {
-    const totalRecentPages = chartData.reduce((sum, day) => sum + (day.pages || 0), 0);
-    const avgPagesPerDay   = totalRecentPages > 0 ? totalRecentPages / 7 : 10;
-    const jobsToAnalyze    = allJobs.length > 0 ? allJobs : fallbackJobs;
-    const colorRatio       = jobsToAnalyze.filter(j => j.type === 'Color').length / (jobsToAnalyze.length || 1);
-    const bwRatio          = 1 - colorRatio;
-    const dailyBurnCMY     = avgPagesPerDay * (colorRatio * 0.025);
-    const dailyBurnK       = avgPagesPerDay * ((colorRatio * 0.015) + (bwRatio * 0.035));
+    const pageHistory = chartData.map(d => d.pages || 0);
+
+    // Step 1: predict tomorrow's pages via linear regression
+    const predictedPages   = linearRegression(pageHistory);
+    // Step 2: weighted average of recent days
+    const weightedAvgPages = weightedBurnRate(pageHistory);
+    // Step 3: use whichever is higher (conservative estimate)
+    const effectiveDailyPages = Math.max(predictedPages, weightedAvgPages);
+
+    // Step 4: job mix analysis
+    const jobsToAnalyze = allJobs.length > 0 ? allJobs : fallbackJobs;
+    const colorRatio    = jobsToAnalyze.filter(j => j.type === 'Color').length / (jobsToAnalyze.length || 1);
+    const bwRatio       = 1 - colorRatio;
+
+    // Step 5: per-toner weighted burn histories
+    const tonerHistory = {
+      cyan:    chartData.map(d => (d.pages || 0) * colorRatio * 0.025),
+      magenta: chartData.map(d => (d.pages || 0) * colorRatio * 0.025),
+      yellow:  chartData.map(d => (d.pages || 0) * colorRatio * 0.025),
+      black:   chartData.map(d => (d.pages || 0) * ((colorRatio * 0.015) + (bwRatio * 0.035))),
+    };
+
+    const burnRates = {
+      cyan:    Math.max(0.01, weightedBurnRate(tonerHistory.cyan)),
+      magenta: Math.max(0.01, weightedBurnRate(tonerHistory.magenta)),
+      yellow:  Math.max(0.01, weightedBurnRate(tonerHistory.yellow)),
+      black:   Math.max(0.01, weightedBurnRate(tonerHistory.black)),
+    };
+
+    // Step 6: days remaining per resource
     const limits = [
-      { name: 'Paper',         days: resources.paperBalance / avgPagesPerDay },
-      { name: 'Cyan Toner',    days: dailyBurnCMY > 0 ? resources.toner.cyan    / dailyBurnCMY : 999 },
-      { name: 'Magenta Toner', days: dailyBurnCMY > 0 ? resources.toner.magenta / dailyBurnCMY : 999 },
-      { name: 'Yellow Toner',  days: dailyBurnCMY > 0 ? resources.toner.yellow  / dailyBurnCMY : 999 },
-      { name: 'Black Toner',   days: dailyBurnK   > 0 ? resources.toner.black   / dailyBurnK   : 999 },
+      { name: 'Paper',         days: resources.paperBalance / effectiveDailyPages },
+      { name: 'Cyan Toner',    days: resources.toner.cyan    / burnRates.cyan    },
+      { name: 'Magenta Toner', days: resources.toner.magenta / burnRates.magenta },
+      { name: 'Yellow Toner',  days: resources.toner.yellow  / burnRates.yellow  },
+      { name: 'Black Toner',   days: resources.toner.black   / burnRates.black   },
     ];
+
+    // Step 7: find the bottleneck
     const bottleneck = limits.reduce((prev, curr) => prev.days < curr.days ? prev : curr);
     const minDays    = Math.max(0, Math.floor(bottleneck.days));
-    const habitText  = colorRatio > 0.6 ? "heavy Color usage" : "heavy B&W usage";
-    const reason     = minDays < 999
-      ? `Bottleneck: ${bottleneck.name} (Driven by ${habitText})`
-      : "Supply levels are stable and balanced.";
-    return { days: minDays > 900 ? '99+' : minDays, reason };
+
+    // Step 8: trend detection
+    const firstHalf  = pageHistory.slice(0, 3).reduce((a, b) => a + b, 0) / 3;
+    const secondHalf = pageHistory.slice(4).reduce((a, b)  => a + b, 0) / 3;
+    const trend      = secondHalf > firstHalf * 1.2 ? '📈 Usage trending up'
+                     : secondHalf < firstHalf * 0.8 ? '📉 Usage trending down'
+                     : '➡️ Usage stable';
+
+    // Step 9: confidence score based on data variance
+    const avg      = pageHistory.reduce((a, b) => a + b, 0) / pageHistory.length;
+    const variance = pageHistory.reduce((sum, v) => sum + (v - avg) ** 2, 0) / pageHistory.length;
+    const stdDev   = Math.sqrt(variance);
+    const cv       = avg > 0 ? (stdDev / avg) * 100 : 100;
+    const confidence = cv < 20 ? 'High' : cv < 50 ? 'Medium' : 'Low';
+
+    const habitText = colorRatio > 0.6 ? 'heavy Color usage' : 'heavy B&W usage';
+    const reason    = minDays < 999
+      ? `Bottleneck: ${bottleneck.name} · ${habitText} · ${trend} · Confidence: ${confidence}`
+      : `Supplies stable · ${trend} · Confidence: ${confidence}`;
+
+    return { days: minDays > 900 ? '99+' : minDays, reason, trend, confidence };
   };
+
   const aiStats = calculateAI();
 
   const isResourceLow = resources.paperBalance <= 500 || Object.values(resources.toner).some(v => v <= 15);
@@ -169,7 +241,6 @@ const Dashboard = () => {
   };
   const activeAlerts = generateAlerts();
 
-  /* Shared row renderer for both activity tables */
   const JobRow = ({ job }) => (
     <tr key={job._id || Math.random()} className="table-row">
       <td className="doc-name-cell">
@@ -200,14 +271,12 @@ const Dashboard = () => {
         </div>
 
         <div className="header-actions">
-          {/* Theme toggle */}
           <div className={`theme-toggle ${isDarkMode ? 'is-dark' : ''}`} onClick={() => setIsDarkMode(!isDarkMode)} title="Toggle Dark/Light Mode">
             <div className="theme-toggle-thumb" />
             <Sun  size={14} className="theme-icon sun-icon"  />
             <Moon size={14} className="theme-icon moon-icon" />
           </div>
 
-          {/* Search */}
           <div style={{ display: 'flex', gap: '8px' }}>
             <div className="search-bar">
               <Search size={16} className="search-icon" />
@@ -282,10 +351,10 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* AI Predictor */}
+        {/* Predictor Card */}
         <div className="dashboard-card ai-card">
           <div className="card-header">
-            <span className="card-title ai-title">AI Predictor</span>
+            <span className="card-title ai-title">Smart Predictor</span>
             <Sparkles size={18} className="card-icon ai-icon" />
           </div>
           <div className="card-body">
@@ -293,10 +362,10 @@ const Dashboard = () => {
             <h2 className="main-stat ai-stat">{aiStats.days} Days</h2>
             <div className="depletion-info">
               <Clock size={16} style={{ flexShrink: 0 }} />
-              <span style={{ fontSize: '12px', lineHeight: '1.2' }}>{aiStats.reason}</span>
+              <span style={{ fontSize: '12px', lineHeight: '1.4' }}>{aiStats.reason}</span>
             </div>
             <div className="ai-footer-note">
-              <i>"Calculated by analyzing recent usage habits and specific resource burn rates."</i>
+              <i>"Predicted using Linear Regression on 7-day usage trend + Weighted Burn Rate analysis per resource."</i>
             </div>
           </div>
         </div>

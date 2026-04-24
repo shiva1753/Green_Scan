@@ -1,3 +1,12 @@
+/* Fix scroll - scoped to auth page only */
+html:has(.auth-page),
+body:has(.auth-page) {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  height: 100%;
+}
+
 /* Page background + layout */
 .auth-page {
   min-height: 100vh;
@@ -28,16 +37,17 @@
   z-index: 1;
 }
 
-/* App title & subtitle (FIXED COLORS) */
+/* App title & subtitle */
 .app-title {
-  color: #ffffff;          /* strong white */
+  color: #ffffff;
   font-weight: 700;
   margin-bottom: 5px;
 }
 
 .app-subtitle {
-  color: #e5e7eb;          /* light grey */
+  color: #e5e7eb;
   margin-bottom: 25px;
+  letter-spacing: 0.3px;
 }
 
 /* Card styling */
@@ -52,6 +62,7 @@
 
 .auth-card:hover {
   transform: translateY(-2px);
+  will-change: transform;
 }
 
 /* Card heading */
@@ -63,7 +74,7 @@
 /* Labels */
 .auth-card label {
   font-size: 14px;
-  color: #1e293b;          /* darker label */
+  color: #1e293b;
   margin-bottom: 5px;
   display: block;
 }
@@ -76,11 +87,12 @@
   border-radius: 8px;
   border: 1px solid #cbd5e1;
   font-size: 14px;
-  color: #0f172a;          /* text inside input */
+  color: #0f172a;
+  box-sizing: border-box;
 }
 
 .auth-card input::placeholder {
-  color: #64748b;          /* placeholder grey */
+  color: #64748b;
 }
 
 .auth-card input:focus {
@@ -118,16 +130,14 @@
   font-weight: 600;
 }
 
-/* Footer (FIXED VISIBILITY) */
+/* Footer */
 footer {
   margin-top: 25px;
   font-size: 13px;
-  color: #e5e7eb;          /* light text over dark bg */
+  color: #e5e7eb;
 }
 
-.app-subtitle {
-  letter-spacing: 0.3px;
-}
+/* Title underline accent */
 .app-title::after {
   content: "";
   display: block;
